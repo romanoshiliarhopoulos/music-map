@@ -43,5 +43,5 @@ Attention-weighted Playlist Embedding
     ↓
 Similarity Search in Song Embedding Space
     ↓
-Top-K Recommendations (filtered & diversified)
+Top-K Recommendations (filtered)
 ```
