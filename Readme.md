@@ -4,7 +4,7 @@
 
 ---
 
-## Notes on how to implement
+## Notes on implementation
 
 1. Data architecure - How to get collaborative data
 
