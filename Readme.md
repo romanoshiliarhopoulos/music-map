@@ -9,11 +9,11 @@
 1. Data architecure - How to get collaborative data
 
 ```
-Yambda-5B Dataset (5B interactions, 9.39M tracks, 1M users)
+Yambda-50M Dataset (50M interactions, 850k tracks)
     ↓
 Graph Construction:
     - Nodes: [Users, Songs]
-    - Edges: [Listen_count × temporal_weight × organic_flag]
+    - Edges: [Listen_count × temporal_weight (something like recency bias) × organic_flag]
     - Features: [Audio_embeddings, Metadata]
     ↓
 Temporal Split: Train(80%) / Val(10%) / Test(10%)
@@ -45,3 +45,24 @@ Similarity Search in Song Embedding Space
     ↓
 Top-K Recommendations (filtered)
 ```
+
+---
+## Data collection and Pre-Processing
+
+Data was collected from Hugging faced and raw data is saved under `data/raw`. Data collection done through scripts located under `scripts/`.
+
+Data preprocessing is crucial for this music recommendation system because it transforms the raw Yambda dataset into a format suitable for Graph Neural Network training. 
+
+The preprocessor loads four Parquet files from the Yambda dataset and combines them into a unified interaction matrix:​
+
+Each interaction type receives different weights: listens use play_count as implicit feedback, likes get a strong positive weight of 5.0, and dislikes receive a negative weight of -3.0. The system merges these with audio embeddings to create rich multimodal features.​ 
+
+#### User and Item Filtering
+Filtering dramatically reduces dataset size while preserving the most informative interactions.​
+
+- Minimum Interaction Threshold: Only users and items with at least 10 interactions are retained to ensure meaningful patterns​
+
+- Label Encoding: String IDs are converted to continuous integer indices using sklearn's LabelEncoder​
+
+- Mapping Creation: Dictionaries map original IDs to encoded indices for efficient graph construction​
+
