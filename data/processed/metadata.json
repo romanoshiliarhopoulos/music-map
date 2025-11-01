@@ -1,0 +1,10 @@
+{
+  "total_interactions": 45881950,
+  "num_users": 9984,
+  "num_items": 253939,
+  "train_size": 36705560,
+  "val_size": 4588195,
+  "test_size": 4588195,
+  "min_interactions": 10,
+  "chunk_size": 100000
+}

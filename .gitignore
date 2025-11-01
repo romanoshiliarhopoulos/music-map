@@ -2,3 +2,8 @@ dislikes.parquet
 embeddings.parquet
 likes.parquet
 listens.parquet
+test.parquet
+train.parquet
+val.parquet
+processed_interactions.parquet
+user_item_mappings.pkl
