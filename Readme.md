@@ -71,4 +71,4 @@ Final data after pre-processing: (45M interactions, 10k users ~ 850k songs)
 ```
 Loaded preprocessed data: {'total_interactions': 45881950, 'num_users': 9984, 'num_items': 253939, 'train_size': 36705560, 'val_size': 4588195, 'test_size': 4588195, 'min_interactions': 10, 'chunk_size': 100000}
 ```
-The data is split temporally to avoid data leakage. This ensures that the model 'does not look into the future', as what a user listens to in October is influenced by what they liked in September.
+The data is split temporally to avoid data leakage. This ensures that the model 'does not look into the future', as what a user listens to in October is influenced by what they liked in September, creating an unusually high accuracy. 
