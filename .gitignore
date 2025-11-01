@@ -7,3 +7,4 @@ train.parquet
 val.parquet
 processed_interactions.parquet
 user_item_mappings.pkl
+__pycache__
