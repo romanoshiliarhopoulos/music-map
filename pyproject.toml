@@ -1,0 +1,18 @@
+[project]
+name = "musicmap"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Romanos Chiliarchopoulos",email = "romanoshiliarhopoulos@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "datasets (>=4.3.0,<5.0.0)",
+    "dask (>=2025.10.0,<2026.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
