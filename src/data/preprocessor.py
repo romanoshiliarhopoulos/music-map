@@ -1,290 +1,296 @@
-import os
-from pathlib import Path
 import pandas as pd
 import numpy as np
-from typing import Dict, Iterator, Tuple, List
-import torch
+import json
+import os
+import pickle
+import shutil # For cleaning up temp files
+from typing import Dict, Tuple, List
+from tqdm import tqdm
 from sklearn.preprocessing import LabelEncoder
-import pyarrow.parquet as pq
-
+from collections import Counter # Use Counter for efficient counting
 
 class Preprocessor:
-    def __init__(self, chunk_size: int = 100000, min_interactions: int = 20):
-        self.user_encoder = LabelEncoder()
-        self.song_encoder = LabelEncoder()
-        self.chunk_size = chunk_size
-        self.min_interactions = min_interactions
-
-    def _read_parquet_chunks(self, file_path: str) -> Iterator[pd.DataFrame]:
-        """Read parquet file in chunks using PyArrow"""
-        parquet_file = pq.ParquetFile(file_path)
+    def __init__(self, position_weight_decay: float = 0.001, 
+                 min_track_occurrences: int = 5,
+                 min_playlist_tracks: int = 10):
         
-        for batch in parquet_file.iter_batches(batch_size=self.chunk_size):
-            chunk_df = batch.to_pandas()
-            yield chunk_df
+        self.position_weight_decay = position_weight_decay
+        self.min_track_occurrences = min_track_occurrences
+        self.min_playlist_tracks = min_playlist_tracks
+        
+        self.playlist_encoder = LabelEncoder()
+        self.track_encoder = LabelEncoder()
+        
+        # Placeholders for global stats computed in Pass 1
+        self.global_max_followers = 1.0
+        self.global_max_edits = 1.0
+        self.valid_tracks = set()
 
-    def load_and_merge_data_chunked(self, data_path: str) -> pd.DataFrame:
-            """Load and combine all interaction files using chunked processing"""
-            print("Loading Yambda-5B interactions in chunks...")
-            
+    def precompute_stats(self, data_path: str, slice_files: List[str]):
+        """
+        Pass 1: Go through all files to get global max stats and track counts.
+        This is memory-light as it only holds counters and max values.
+        """
+        print("Pass 1: Pre-computing global stats and track counts...")
+        
+        track_counts = Counter()
+        max_followers = 0
+        max_edits = 0
+
+        for slice_file in tqdm(slice_files, desc="Pre-computing"):
+            file_path = os.path.join(data_path, slice_file)
+            try:
+                with open(file_path, 'r') as f:
+                    slice_data = json.load(f)
+                
+                for playlist in slice_data['playlists']:
+                    if playlist['num_tracks'] < self.min_playlist_tracks:
+                        continue
+                    
+                    # Update global max stats
+                    followers = playlist.get('num_followers', 0)
+                    edits = playlist.get('num_edits', 1)
+                    if followers > max_followers:
+                        max_followers = followers
+                    if edits > max_edits:
+                        max_edits = edits
+                    
+                    # Update track counts
+                    for track in playlist['tracks']:
+                        track_counts[track['track_uri']] += 1
+                        
+            except json.JSONDecodeError as e:
+                print(f"\n[Warning] Failed to parse {slice_file}: {e}. Skipping.")
+        
+        # Store global stats
+        self.global_max_followers = max_followers if max_followers > 0 else 1.0
+        self.global_max_edits = max_edits if max_edits > 0 else 1.0
+
+        # Create the set of valid tracks
+        self.valid_tracks = {
+            track_uri for track_uri, count in track_counts.items() 
+            if count >= self.min_track_occurrences
+        }
+        
+        print(f"\nGlobal Max Followers: {self.global_max_followers}")
+        print(f"Global Max Edits: {self.global_max_edits}")
+        print(f"Total unique tracks found: {len(track_counts):,}")
+        print(f"Valid tracks (>= {self.min_track_occurrences} occurrences): {len(self.valid_tracks):,}")
+
+    def process_and_save_batches(self, data_path: str, slice_files: List[str], 
+                                 batch_size: int, temp_output_dir: str):
+        """
+        Pass 2: Load, filter, process, and save data in manageable batches.
+        """
+        print(f"Pass 2: Processing data in {batch_size}-file batches...")
+        os.makedirs(temp_output_dir, exist_ok=True)
+        
+        num_batches = int(np.ceil(len(slice_files) / batch_size))
+        
+        for i in tqdm(range(num_batches), desc="Processing Batches"):
+            batch_slice_files = slice_files[i*batch_size : (i+1)*batch_size]
             all_interactions = []
             
-            # Process listens file in chunks
-            print("Processing listens file...")
-            for chunk_df in self._read_parquet_chunks(f"{data_path}/listens.parquet"):
-                chunk_df.rename(columns={'uid': 'user_id', 'item_id': 'track_id'}, inplace=True)
-                chunk_df['interaction_type'] = 'listen'
-                chunk_df['weight'] = (chunk_df['played_ratio_pct'] / 100.0).astype('float32')
-                chunk_df['play_count'] = 1
+            for slice_file in batch_slice_files:
+                file_path = os.path.join(data_path, slice_file)
+                try:
+                    with open(file_path, 'r') as f:
+                        slice_data = json.load(f)
+                    
+                    for playlist in slice_data['playlists']:
+                        if playlist['num_tracks'] < self.min_playlist_tracks:
+                            continue
+                        
+                        playlist_id = playlist['pid']
+                        num_followers = playlist.get('num_followers', 0)
+                        num_edits = playlist.get('num_edits', 1)
+                        modified_at = playlist.get('modified_at', 0) 
+                        
+                        for track in playlist['tracks']:
+                            # --- FILTER ON THE FLY ---
+                            if track['track_uri'] not in self.valid_tracks:
+                                continue
+                            
+                            interaction = {
+                                'playlist_id': playlist_id,
+                                'track_uri': track['track_uri'],
+                                'track_name': track['track_name'],
+                                'artist_uri': track['artist_uri'],
+                                'artist_name': track['artist_name'],
+                                'album_uri': track['album_uri'],
+                                'album_name': track['album_name'],
+                                'position': track['pos'],
+                                'num_followers': num_followers,
+                                'num_edits': num_edits,
+                                'modified_at': modified_at, 
+                                'duration_ms': track.get('duration_ms', 0) 
+                            }
+                            all_interactions.append(interaction)
                 
-                #-optimize data type to reduce memory
-                chunk_df['interaction_type'] = chunk_df['interaction_type'].astype('category')
-                chunk_df['play_count'] = chunk_df['play_count'].astype('int16')
+                except json.JSONDecodeError:
+                    # Already warned in Pass 1, skip silently
+                    continue
+            
+            if not all_interactions:
+                continue # Skip empty batches
                 
-                selected_cols = ['user_id', 'track_id', 'timestamp', 'is_organic', 'interaction_type', 'weight', 'play_count']
-                all_interactions.append(chunk_df[selected_cols])
-                
-            # Process likes file in chunks  
-            print("Processing likes file...")
-            for chunk_df in self._read_parquet_chunks(f"{data_path}/likes.parquet"):
-                chunk_df.rename(columns={'uid': 'user_id', 'item_id': 'track_id'}, inplace=True)
-                chunk_df['interaction_type'] = 'like'
-                chunk_df['weight'] = 5.0
-                chunk_df['play_count'] = 1
-
-                # -optimize data type to reduce memory
-                chunk_df['interaction_type'] = chunk_df['interaction_type'].astype('category')
-                chunk_df['weight'] = chunk_df['weight'].astype('float32')
-                chunk_df['play_count'] = chunk_df['play_count'].astype('int16')
-
-                selected_cols = ['user_id', 'track_id', 'timestamp', 'is_organic', 'interaction_type', 'weight', 'play_count']
-                all_interactions.append(chunk_df[selected_cols])
+            # Convert batch to DataFrame
+            batch_df = pd.DataFrame(all_interactions)
             
-            # Process dislikes file in chunks 
-            print("Processing dislikes file...")
-            for chunk_df in self._read_parquet_chunks(f"{data_path}/dislikes.parquet"):
-                chunk_df.rename(columns={'uid': 'user_id', 'item_id': 'track_id'}, inplace=True)
-                chunk_df['interaction_type'] = 'dislike' 
-                chunk_df['weight'] = -3.0
-                chunk_df['play_count'] = 1
-
-                # -optimize data type to reduce memory
-                chunk_df['interaction_type'] = chunk_df['interaction_type'].astype('category')
-                chunk_df['weight'] = chunk_df['weight'].astype('float32')
-                chunk_df['play_count'] = chunk_df['play_count'].astype('int16')
-                
-                selected_cols = ['user_id', 'track_id', 'timestamp', 'is_organic', 'interaction_type', 'weight', 'play_count']
-                all_interactions.append(chunk_df[selected_cols])
+            # Apply weighting (using global stats)
+            batch_df = self.apply_interaction_weighting(batch_df)
             
-            # Combine all interactions
-            print("Combining interactions...")
-            combined_interactions = pd.concat(all_interactions, ignore_index=True)
-            
-            # Free memory
-            del all_interactions
+            # Save processed batch
+            batch_df.to_parquet(
+                os.path.join(temp_output_dir, f'batch_{i}.parquet'), 
+                index=False
+            )
 
-            print(f"Combined dataset: {len(combined_interactions)} interactions")
-            
-            return combined_interactions
+    def apply_interaction_weighting(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply weighting. Now uses pre-computed global max values.
+        """
+        # Position weight
+        position_weight = np.exp(-self.position_weight_decay * df['position'])
+        
+        # Follower weight (using global max)
+        follower_weight = np.log1p(df['num_followers']) / np.log1p(self.global_max_followers)
+        follower_weight = 0.5 + follower_weight
+        
+        # Edit weight (using global max)
+        edit_weight = np.log1p(df['num_edits']) / np.log1p(self.global_max_edits)
+        edit_weight = 0.5 + edit_weight
+        
+        df['interaction_weight'] = position_weight * follower_weight * edit_weight
+        
+        # We can skip normalizing by the mean here, or do it in the final pass
+        # Let's do it in the final pass for true global mean
+        return df
 
-    def create_user_item_mappings(self, df: pd.DataFrame) -> Tuple[Dict, Dict, pd.DataFrame]:
-        """Create user and item ID mappings with filtering"""
-        print("Creating user-item mappings...")
+    def finalize_processing(self, temp_dir: str, output_dir: str):
+        """
+        Pass 3: Combine batches, fit mappers, split, and save.
+        """
+        print("Pass 3: Finalizing processing...")
+        batch_files = [os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.endswith('.parquet')]
         
-        # Count interactions per user and item
-        user_counts = df['user_id'].value_counts()
-        item_counts = df['track_id'].value_counts()
-        
-        # Filter users and items with minimum interactions
-        valid_users = user_counts[user_counts >= self.min_interactions].index
-        valid_items = item_counts[item_counts >= self.min_interactions].index
-        
-        # Filter dataframe
-        print(f"Filtering {len(df)} interactions by user...")
-        df_filtered = df[df['user_id'].isin(valid_users)]
+        if not batch_files:
+            print("Error: No batch files found. Aborting.")
+            return
 
-        print(f"Filtering {len(df_filtered)} interactions by item...")
-        df_filtered = df_filtered[df_filtered['track_id'].isin(valid_items)].copy()
+        # --- 1. Fit Encoders (Memory-Efficient) ---
+        print("Fitting encoders...")
+        # Load *only* the ID columns from all batches to fit encoders
+        all_playlist_ids = pd.concat(
+            [pd.read_parquet(f, columns=['playlist_id']) for f in batch_files]
+        )['playlist_id'].unique()
         
-        print(f"Filtered from {len(df)} to {len(df_filtered)} interactions")
-        print(f"Users: {len(df['user_id'].unique())} -> {len(valid_users)}")
-        print(f"Items: {len(df['track_id'].unique())} -> {len(valid_items)}")
+        all_track_uris = pd.concat(
+            [pd.read_parquet(f, columns=['track_uri']) for f in batch_files]
+        )['track_uri'].unique()
         
-        # Create encoded indices
-        df_filtered['user_idx'] = self.user_encoder.fit_transform(df_filtered['user_id'])
-        df_filtered['item_idx'] = self.song_encoder.fit_transform(df_filtered['track_id'])
+        self.playlist_encoder.fit(all_playlist_ids)
+        self.track_encoder.fit(all_track_uris)
         
-        # Create mappings
-        user_mapping = dict(zip(self.user_encoder.classes_, range(len(self.user_encoder.classes_))))
-        item_mapping = dict(zip(self.song_encoder.classes_, range(len(self.song_encoder.classes_))))
-        
-        return user_mapping, item_mapping, df_filtered
+        playlist_mapping = dict(zip(self.playlist_encoder.classes_, range(len(self.playlist_encoder.classes_))))
+        track_mapping = dict(zip(self.track_encoder.classes_, range(len(self.track_encoder.classes_))))
+        print(f"Created mappings for {len(playlist_mapping):,} playlists and {len(track_mapping):,} tracks")
 
-    def temporal_train_test_split(self, df: pd.DataFrame, train_ratio: float = 0.8, val_ratio: float = 0.1) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """Split data temporally to prevent data leakage"""
+        # --- 2. Load all processed data ---
+        print("Loading all processed batches...")
+        # This is the main memory-intensive step, but data is now filtered.
+        try:
+            df = pd.read_parquet(batch_files)
+        except MemoryError:
+            print("\n--- CRITICAL: Out of Memory ---")
+            print("Even the filtered dataset is too large to load into RAM.")
+            print("Consider using a library like Dask or Polars for out-of-core processing.")
+            return
+
+        # --- 3. Apply Mappings and Final Weight Norm ---
+        print("Applying mappings and final normalization...")
+        df['playlist_idx'] = self.playlist_encoder.transform(df['playlist_id'])
+        df['track_idx'] = self.track_encoder.transform(df['track_uri'])
         
-        print("Creating temporal train/validation/test splits...")
+        # Normalize weights by global mean
+        mean_weight = df['interaction_weight'].mean()
+        if mean_weight > 0:
+            df['interaction_weight'] = df['interaction_weight'] / mean_weight
         
-        # Sort by timestamp
-        df_sorted = df.sort_values('timestamp')
+        print(f"Weight statistics (Global):")
+        print(f"  Min: {df['interaction_weight'].min():.4f}")
+        print(f"  Max: {df['interaction_weight'].max():.4f}")
+        print(f"  Mean: {df['interaction_weight'].mean():.4f}")
+        print(f"  Std: {df['interaction_weight'].std():.4f}")
+
+        # --- 4. Extract Metadata ---
+        track_metadata = self.extract_track_metadata(df)
+
+        # --- 5. Temporal Split ---
+        train_df, val_df, test_df = self.temporal_train_test_split(df)
         
-        # Calculate split sizes
+        # --- 6. Save Final Data ---
+        self.save_processed_data(
+            train_df, val_df, test_df, track_metadata,
+            playlist_mapping, track_mapping, output_dir
+        )
+        
+        # --- 7. Cleanup ---
+        print(f"Cleaning up temporary directory: {temp_dir}")
+        shutil.rmtree(temp_dir)
+
+    # (No changes needed for the methods below)
+
+    def temporal_train_test_split(self, df: pd.DataFrame, 
+                                  train_ratio: float = 0.8, 
+                                  val_ratio: float = 0.1) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        print("Performing temporal train/val/test split...")
+        df_sorted = df.sort_values(by=['modified_at', 'playlist_id']).copy()
+        
         n_total = len(df_sorted)
         n_train = int(n_total * train_ratio)
         n_val = int(n_total * val_ratio)
         
-        # Create splits
-        train_df = df_sorted[:n_train].copy()
-        val_df = df_sorted[n_train:n_train + n_val].copy()
-        test_df = df_sorted[n_train + n_val:].copy()
+        train_df = df_sorted.iloc[:n_train].copy()
+        val_df = df_sorted.iloc[n_train:n_train + n_val].copy()
+        test_df = df_sorted.iloc[n_train + n_val:].copy()
         
-        print(f"Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
-        
+        print(f"Split sizes:")
+        print(f"  Train: {len(train_df):,} interactions ({len(train_df)/len(df_sorted)*100:.1f}%)")
+        print(f"  Val:   {len(val_df):,} interactions ({len(val_df)/len(df_sorted)*100:.1f}%)")
+        print(f"  Test:  {len(test_df):,} interactions ({len(test_df)/len(df_sorted)*100:.1f}%)")
         return train_df, val_df, test_df
-
-    def process_and_save(self, data_path: str, output_dir: str = "data/processed") -> str:
-        """Process data and save all intermediate results"""
-        
-        # Create output directory
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-        
-        # Define file paths
-        processed_file = f"{output_dir}/processed_interactions.parquet"
-        mappings_file = f"{output_dir}/user_item_mappings.pkl"
-        splits_dir = f"{output_dir}/splits"
-        
-        # Check if already processed
-        if os.path.exists(processed_file) and os.path.exists(mappings_file):
-            print(f"Loading existing preprocessed data from {output_dir}")
-            return self.load_preprocessed_data(output_dir)
-        
-        print("Processing raw data...")
-        
-        # Load and merge data
-        df = self.load_and_merge_data_chunked(data_path)
-        
-        # Create mappings and filter
-        user_mapping, item_mapping, df_filtered = self.create_user_item_mappings(df)
-        
-        # Save processed interactions
-        print(f"Saving processed data to {processed_file}")
-        df_filtered.to_parquet(processed_file, index=False, compression='snappy')
-        
-        # Save mappings (pickle for Python objects)
-        import pickle
-        mappings = {
-            'user_mapping': user_mapping,
-            'item_mapping': item_mapping,
-            'user_encoder': self.user_encoder,
-            'song_encoder': self.song_encoder
-        }
-        
-        with open(mappings_file, 'wb') as f:
-            pickle.dump(mappings, f)
-        
-        # Create and save train/val/test splits
-        train_df, val_df, test_df = self.temporal_train_test_split(df_filtered)
-        
-        Path(splits_dir).mkdir(parents=True, exist_ok=True)
-        train_df.to_parquet(f"{splits_dir}/train.parquet", index=False)
-        val_df.to_parquet(f"{splits_dir}/val.parquet", index=False) 
-        test_df.to_parquet(f"{splits_dir}/test.parquet", index=False)
-        
-        # Save metadata
-        metadata = {
-            'total_interactions': len(df_filtered),
-            'num_users': len(user_mapping),
-            'num_items': len(item_mapping), 
-            'train_size': len(train_df),
-            'val_size': len(val_df),
-            'test_size': len(test_df),
-            'min_interactions': self.min_interactions,
-            'chunk_size': self.chunk_size
-        }
-        
-        import json
-        with open(f"{output_dir}/metadata.json", 'w') as f:
-            json.dump(metadata, f, indent=2)
-            
-        print(f"Preprocessing complete! Data saved to {output_dir}")
-        print(f"Dataset stats: {metadata}")
-        
-        return output_dir
     
-    def load_preprocessed_data(self, output_dir: str):
-        """Load existing preprocessed data"""
-        
-        # Load processed interactions
-        df = pd.read_parquet(f"{output_dir}/processed_interactions.parquet")
-        
-        # Load mappings
-        import pickle
-        with open(f"{output_dir}/user_item_mappings.pkl", 'rb') as f:
-            mappings = pickle.load(f)
-            
-        # Load splits
-        splits = {
-            'train': pd.read_parquet(f"{output_dir}/splits/train.parquet"),
-            'val': pd.read_parquet(f"{output_dir}/splits/val.parquet"),
-            'test': pd.read_parquet(f"{output_dir}/splits/test.parquet")
-        }
-        
-        # Load metadata
-        import json
-        with open(f"{output_dir}/metadata.json", 'r') as f:
-            metadata = json.load(f)
-        
-        print(f"Loaded preprocessed data: {metadata}")
-        
-        return {
-            'data': df,
-            'mappings': mappings, 
-            'splits': splits,
-            'metadata': metadata
-        }
-
-    def get_data_stats(self, df: pd.DataFrame) -> Dict:
-        """Get comprehensive dataset statistics"""
-        stats = {
-            'total_interactions': len(df),
-            'unique_users': df['user_id'].nunique(),
-            'unique_items': df['track_id'].nunique(),
-            'sparsity': 1.0 - (len(df) / (df['user_id'].nunique() * df['track_id'].nunique())),
-            'avg_interactions_per_user': len(df) / df['user_id'].nunique(),
-            'avg_interactions_per_item': len(df) / df['track_id'].nunique(),
-            'interaction_types': df['interaction_type'].value_counts().to_dict(),
-            'organic_ratio': df['is_organic'].mean() if 'is_organic' in df.columns else None,
-            'weight_distribution': {
-                'min': df['weight'].min(),
-                'max': df['weight'].max(),
-                'mean': df['weight'].mean(),
-                'std': df['weight'].std()
-            }
-        }
-        return stats
-
-# Cold-Run pre-processor
-def main():
-    print("STARTING PREPROCESSING!")
-    # Initialize preprocessor
-    preprocessor = Preprocessor(chunk_size=100000, min_interactions=10)
+    def extract_track_metadata(self, df: pd.DataFrame) -> pd.DataFrame:
+        print("Extracting track metadata...")
+        track_metadata = df[[
+            'track_idx', 'track_uri', 'track_name', 
+            'artist_uri', 'artist_name', 
+            'album_uri', 'album_name', 
+            'duration_ms'
+        ]].drop_duplicates(subset=['track_idx']).sort_values('track_idx').reset_index(drop=True)
+        print(f"Extracted metadata for {len(track_metadata):,} unique tracks")
+        return track_metadata
     
-    raw_data_path = "data/raw"  
-    output_path = "data/processed"  
-    
-    # Run preprocessing
-    try:
-        result_path = preprocessor.process_and_save(raw_data_path, output_path)
-        print(f"✅ Preprocessing completed successfully!")
-        print(f"📁 Processed data saved to: {result_path}")
+    def save_processed_data(self, train_df: pd.DataFrame, val_df: pd.DataFrame, 
+                           test_df: pd.DataFrame, track_metadata: pd.DataFrame,
+                           playlist_mapping: Dict, track_mapping: Dict,
+                           output_dir: str = 'data/processed'):
+        print(f"Saving processed data to {output_dir}...")
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Load and verify the results
-        data = preprocessor.load_preprocessed_data(output_path)
-        print(f"📊 Dataset stats: {data['metadata']}")
+        train_df.to_parquet(os.path.join(output_dir, 'train.parquet'), index=False)
+        val_df.to_parquet(os.path.join(output_dir, 'val.parquet'), index=False)
+        test_df.to_parquet(os.path.join(output_dir, 'test.parquet'), index=False)
+        track_metadata.to_parquet(os.path.join(output_dir, 'track_metadata.parquet'), index=False)
         
-    except Exception as e:
-        print(f"❌ Error during preprocessing: {e}")
-        raise
-
-if __name__ == "__main__":
-    main()
+        with open(os.path.join(output_dir, 'playlist_mapping.pkl'), 'wb') as f:
+            pickle.dump(playlist_mapping, f)
+        with open(os.path.join(output_dir, 'track_mapping.pkl'), 'wb') as f:
+            pickle.dump(track_mapping, f)
+        with open(os.path.join(output_dir, 'playlist_encoder.pkl'), 'wb') as f:
+            pickle.dump(self.playlist_encoder, f)
+        with open(os.path.join(output_dir, 'track_encoder.pkl'), 'wb') as f:
+            pickle.dump(self.track_encoder, f)
+        
+        print("Processed data saved successfully!")
