@@ -1,6 +1,6 @@
 # Music Map
 
-### A GNN based music recommendation system!
+### A GNN based music recommendation system
 
 ---
 
