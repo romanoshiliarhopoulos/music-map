@@ -104,3 +104,46 @@ Recommendation Flow:
 - Aggregate: It calculates the mean of these vectors. This creates a new playlist embedding that represents the average embeddings of the seed list.
 - Score: This new prototype embedding is multiplied  against the embeddings of all 176,768 tracks in the dataset.
 - Rank: The tracks with the highest dot-product scores (the closest vectors in the embedding space) are returned as the Top-K recommendations.
+
+# Example Usage
+
+After running: 
+```
+poetry run python -m src.scripts.make_predictions --checkpoint data/train/checkpoints/model_epoch_5000.pt --track_ids 466819
+```
+
+```
+--- Finding Top 10 Tracks for new playlist with 1 seed tracks ---
+  Seed Track: Jamming - Bob Marley & The Wailers (ID: 466819)
+
+Displaying: Rank | Global Track ID | Track Info | Score
+  Rank 01 | 459445 | Is This Love - Bob Marley & The Wailers (Score: 70.5366)
+  Rank 02 | 420945 | Three Little Birds - Bob Marley & The Wailers (Score: 68.1114)
+  Rank 03 | 451975 | Could You Be Loved - Bob Marley & The Wailers (Score: 67.6103)
+  Rank 04 | 459282 | Let's Do It Again - J Boog (Score: 65.4178)
+  Rank 05 | 481401 | Beach in Hawaii - Ziggy Marley (Score: 64.6439)
+  Rank 06 | 415261 | One Love / People Get Ready - Bob Marley & The Wailers (Score: 63.8000)
+  Rank 07 | 347629 | Buffalo Soldier - Bob Marley & The Wailers (Score: 62.4775)
+  Rank 08 | 437269 | Come Around - Collie Buddz (Score: 59.4511)
+  Rank 09 | 361580 | Welcome To Jamrock - Damian Marley (Score: 59.0682)
+  Rank 10 | 359069 | Red Red Wine - Edit - UB40 (Score: 58.1755)
+  ```
+
+#### 📈 Analysis of Recommendations
+The model's output for this single seed track demonstrates a deep understanding of the genre similarity accross the embeding space. This surfaces from genre grouping across playlists that makes this collaborative filtering approach work. 
+
+To evaluate recommender performance 10% of the original data was kept for evaluation. Each playlist in the test data, was divided in half. Half the songs were given as seed tracks to the model. We measure then 20 recommendations for that playlist.
+```
+--- Starting Evaluation (K=20) ---
+Evaluating Playlists: 23165it [01:07, 342.78it/s]
+
+--- 📊 Evaluation Results ---
+  Playlists Tested: 23165
+  Average Precision@20:  9.90%
+  Average Hit Rate@20:   65.76%
+------------------------------
+```
+Precision @20: Out of our 20 recommendations, what % were correct?
+Hit Rate @20: What % of the time did we recommend at least ONE correct song?
+
+Overall the predictions seem to be very strong with an impressive hit rate. 
