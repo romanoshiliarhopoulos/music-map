@@ -6,9 +6,9 @@
 
 ## Notes on implementation
 
-## 🏗️ System Architecture
+# 🏗️ System Architecture
 
-### Phase 1: Data Architecture - Spotify Million Playlist Dataset
+### Data Architecture - Spotify Million Playlist Dataset
 
 The Spotify Million Playlist Dataset (MPD) consists of **1 million user-created playlists** from US Spotify users (January 2010 - November 2017), containing:
 
