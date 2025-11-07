@@ -8,3 +8,10 @@ val.parquet
 processed_interactions.parquet
 user_item_mappings.pkl
 __pycache__
+*.json
+*.parquet
+*.pkl
+.DS_Store
+.vscode
+.gitignore
+*.pt
