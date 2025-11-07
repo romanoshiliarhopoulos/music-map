@@ -11,10 +11,14 @@ dependencies = [
     "datasets (>=4.3.0,<5.0.0)",
     "dask (>=2025.10.0,<2026.0.0)",
     "scikit-learn (>=1.7.2,<2.0.0)",
-    "torch (>=2.9.0,<3.0.0)"
+    "torch (==2.3.1)",
+    "torch-geometric (>=2.7.0,<3.0.0)",
+    "kagglehub (>=0.3.13,<0.4.0)",
+    "matplotlib (>=3.10.7,<4.0.0)"
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+

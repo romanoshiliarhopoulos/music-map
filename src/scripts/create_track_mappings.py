@@ -7,7 +7,6 @@ import sys
 from typing import Set, Dict
 
 # --- Configuration ---
-
 NUM_PLAYLISTS = 315_220
 
 DATA_DIR = "data/processed"
@@ -18,9 +17,9 @@ INPUT_FILES = [
     os.path.join(DATA_DIR, "val.parquet")
 ]
 
-# The final output CSV file
+
 OUTPUT_CSV = "track_metadata_mapping.csv"
-# The final output JSON file
+
 OUTPUT_JSON = "track_metadata_mapping.json"
 
 

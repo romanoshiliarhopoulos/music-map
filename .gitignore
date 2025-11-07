@@ -11,7 +11,7 @@ __pycache__
 *.json
 *.parquet
 *.pkl
-.DS_Store
+*.DS_Store
 .vscode
 .gitignore
 *.pt

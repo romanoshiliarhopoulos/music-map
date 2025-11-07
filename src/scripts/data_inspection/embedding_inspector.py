@@ -7,22 +7,14 @@ import os
 from torch_geometric.data import Data
 from typing import Dict, Any, Optional
 
-try:
-    from src.model.lightgcn_plus import LightGNN
-except ImportError:
-    print("Error: Could not import 'src.model.lightgcn_plus.LightGNN'.", file=sys.stderr)
-    print("Please run this script from your project's root directory (e.g., 'musicmap/').", file=sys.stderr)
-    sys.exit(1)
-
-try:
-    import pandas as pd
-except ImportError:
-    print("Error: 'pandas' and 'pyarrow' (or 'fastparquet') are required to read .parquet files.", file=sys.stderr)
-    print("Please install them with: pip install pandas pyarrow", file=sys.stderr)
-    sys.exit(1)
+from src.model.lightgcn_plus import LightGNN
 
 
-# We need these to initialize the model structure *before* loading the weights
+import pandas as pd
+
+
+
+# We need these to initialize the model structure before loading the weights
 NUM_PLAYLISTS = 315_220
 NUM_TRACKS = 176_768
 NUM_NODES = NUM_PLAYLISTS + NUM_TRACKS
@@ -65,7 +57,7 @@ def get_all_embeddings(model: LightGNN, graph_path: str, device: torch.device) -
     The training process bakes the graph structure into these L0 embeddings.
     """
         
-    print("Extracting (L0) embeddings directly from the model...")
+    print("Extracting embeddings directly from the model...")
     
     # Move model to the target device to extract weights
     model = model.to(device)
@@ -112,8 +104,6 @@ def load_metadata(filepath: str) -> Optional[Dict[str, Any]]:
         # De-duplicate, keeping only the first entry for each local track_idx
         df = df[all_needed_cols].drop_duplicates(subset=[id_col])
         
-        # --- *** THIS IS THE CRITICAL FIX *** ---
-        # Create the global node ID by adding the playlist offset
         # This maps e.g., track_idx 0 -> global_id 315220
         print(f"Creating global node ID from '{id_col}' + {NUM_PLAYLISTS}...")
         
