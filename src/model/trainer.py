@@ -84,18 +84,6 @@ class Trainer:
                                 tqdm.write("Warning: No valid pos/neg split, skipping batch")
                                 continue
                             
-                        # Fallback to manual (should NOT happen now)
-                        else:
-                            tqdm.write("Warning: Using manual negative sampling")
-                            p_emb = all_emb[batch.edge_label_index[0]]
-                            pos_t_emb = all_emb[batch.edge_label_index[1]]
-                            
-                            # Manual random negative sampling within batch
-                            neg_nodes = torch.randint(0, batch.num_nodes, (batch.edge_label_index.size(1),), device=device)
-                            neg_t_emb = all_emb[neg_nodes]
-                            
-                            pos_scores = (p_emb * pos_t_emb).sum(dim=1)
-                            neg_scores = (p_emb * neg_t_emb).sum(dim=1)
                         
                         #Calculate Loss and Backpropagate
                         optimizer.zero_grad()
@@ -136,7 +124,7 @@ class Trainer:
             if device.type == 'mps':
                 torch.mps.empty_cache()
 
-            # Checkpointing
+            # Checkpoint
             if epoch % checkpoint_freq == 0:
                 checkpoint_path = os.path.join(save_dir, f"model_epoch_{epoch}.pt")
                 tqdm.write(f"Saving checkpoint to {checkpoint_path}...")

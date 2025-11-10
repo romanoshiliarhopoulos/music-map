@@ -3,11 +3,11 @@ import numpy as np
 import json
 import os
 import pickle
-import shutil # For cleaning up temp files
+import shutil 
 from typing import Dict, Tuple, List
 from tqdm import tqdm
 from sklearn.preprocessing import LabelEncoder
-from collections import Counter # Use Counter for efficient counting
+from collections import Counter 
 
 class Preprocessor:
     def __init__(self, position_weight_decay: float = 0.001, 
@@ -21,7 +21,6 @@ class Preprocessor:
         self.playlist_encoder = LabelEncoder()
         self.track_encoder = LabelEncoder()
         
-        # Placeholders for global stats computed in Pass 1
         self.global_max_followers = 1.0
         self.global_max_edits = 1.0
         self.valid_tracks = set()
@@ -29,7 +28,6 @@ class Preprocessor:
     def precompute_stats(self, data_path: str, slice_files: List[str]):
         """
         Pass 1: Go through all files to get global max stats and track counts.
-        This is memory-light as it only holds counters and max values.
         """
         print("Pass 1: Pre-computing global stats and track counts...")
         
@@ -80,7 +78,7 @@ class Preprocessor:
     def process_and_save_batches(self, data_path: str, slice_files: List[str], 
                                  batch_size: int, temp_output_dir: str):
         """
-        Pass 2: Load, filter, process, and save data in manageable batches.
+        Pass 2: Load, filter, process, and save data in batches.
         """
         print(f"Pass 2: Processing data in {batch_size}-file batches...")
         os.makedirs(temp_output_dir, exist_ok=True)
@@ -107,7 +105,7 @@ class Preprocessor:
                         modified_at = playlist.get('modified_at', 0) 
                         
                         for track in playlist['tracks']:
-                            # --- FILTER ON THE FLY ---
+                            # Filter
                             if track['track_uri'] not in self.valid_tracks:
                                 continue
                             
@@ -128,13 +126,12 @@ class Preprocessor:
                             all_interactions.append(interaction)
                 
                 except json.JSONDecodeError:
-                    # Already warned in Pass 1, skip silently
                     continue
             
             if not all_interactions:
                 continue # Skip empty batches
                 
-            # Convert batch to DataFrame
+            # Convert to DataFrame
             batch_df = pd.DataFrame(all_interactions)
             
             # Apply weighting (using global stats)
@@ -148,23 +145,21 @@ class Preprocessor:
 
     def apply_interaction_weighting(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Apply weighting. Now uses pre-computed global max values.
+        Apply weighting. uses pre-computed global max values.
         """
         # Position weight
         position_weight = np.exp(-self.position_weight_decay * df['position'])
         
-        # Follower weight (using global max)
+        # Follower weight 
         follower_weight = np.log1p(df['num_followers']) / np.log1p(self.global_max_followers)
         follower_weight = 0.5 + follower_weight
         
-        # Edit weight (using global max)
+        # Edit weight
         edit_weight = np.log1p(df['num_edits']) / np.log1p(self.global_max_edits)
         edit_weight = 0.5 + edit_weight
         
         df['interaction_weight'] = position_weight * follower_weight * edit_weight
         
-        # We can skip normalizing by the mean here, or do it in the final pass
-        # Let's do it in the final pass for true global mean
         return df
 
     def finalize_processing(self, temp_dir: str, output_dir: str):
@@ -178,9 +173,9 @@ class Preprocessor:
             print("Error: No batch files found. Aborting.")
             return
 
-        # --- 1. Fit Encoders (Memory-Efficient) ---
         print("Fitting encoders...")
-        # Load *only* the ID columns from all batches to fit encoders
+
+        # Load only the ID columns from all batches to fit encoders
         all_playlist_ids = pd.concat(
             [pd.read_parquet(f, columns=['playlist_id']) for f in batch_files]
         )['playlist_id'].unique()
@@ -196,9 +191,9 @@ class Preprocessor:
         track_mapping = dict(zip(self.track_encoder.classes_, range(len(self.track_encoder.classes_))))
         print(f"Created mappings for {len(playlist_mapping):,} playlists and {len(track_mapping):,} tracks")
 
-        # --- 2. Load all processed data ---
+        # Load all processed data 
         print("Loading all processed batches...")
-        # This is the main memory-intensive step, but data is now filtered.
+
         try:
             df = pd.read_parquet(batch_files)
         except MemoryError:
@@ -207,7 +202,7 @@ class Preprocessor:
             print("Consider using a library like Dask or Polars for out-of-core processing.")
             return
 
-        # --- 3. Apply Mappings and Final Weight Norm ---
+        # Apply Mappings and Final Weight Norm 
         print("Applying mappings and final normalization...")
         df['playlist_idx'] = self.playlist_encoder.transform(df['playlist_id'])
         df['track_idx'] = self.track_encoder.transform(df['track_uri'])
@@ -223,23 +218,23 @@ class Preprocessor:
         print(f"  Mean: {df['interaction_weight'].mean():.4f}")
         print(f"  Std: {df['interaction_weight'].std():.4f}")
 
-        # --- 4. Extract Metadata ---
+
         track_metadata = self.extract_track_metadata(df)
 
-        # --- 5. Temporal Split ---
+        # Split into train, val, test sets for later on
         train_df, val_df, test_df = self.temporal_train_test_split(df)
         
-        # --- 6. Save Final Data ---
+
         self.save_processed_data(
             train_df, val_df, test_df, track_metadata,
             playlist_mapping, track_mapping, output_dir
         )
         
-        # --- 7. Cleanup ---
+
         print(f"Cleaning up temporary directory: {temp_dir}")
         shutil.rmtree(temp_dir)
 
-    # (No changes needed for the methods below)
+
 
     def temporal_train_test_split(self, df: pd.DataFrame, 
                                   train_ratio: float = 0.8, 

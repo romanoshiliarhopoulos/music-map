@@ -51,14 +51,14 @@ class LightGNN(nn.Module):
         
         Args:
             n_id: The global node IDs of the nodes in the subgraph. [Subgraph_Size]
-            edge_index: The *local* edge_index of the subgraph. [2, Subgraph_Edges]
+            edge_index: The local edge_index of the subgraph. [2, Subgraph_Edges]
             num_nodes: The total number of nodes in this subgraph.
             
         Returns:
             The final embeddings for only the nodes in the subgraph. [Subgraph_Size, Embedding dimension]
         """
         
-        # Get initial embeddings for the nodes in the subgraph by looking them up from the full embedding matrix.
+        # Get initial embeddings
         x = self.embedding(n_id) # [Subgraph_Size, D]
         
         all_layer_embeddings = [x]
@@ -69,7 +69,7 @@ class LightGNN(nn.Module):
             current_embeddings = layer(current_embeddings, edge_index)
             all_layer_embeddings.append(current_embeddings)
             
-        #Final Aggregation (Mean Pooling)
+        #Mean Pooling
         final_embeddings_stack = torch.stack(all_layer_embeddings, dim=0)
         final_embeddings = torch.mean(final_embeddings_stack, dim=0)
         
@@ -83,7 +83,6 @@ class LightGNN(nn.Module):
         This function operates in one of two modes:
         1.  By Playlist ID: If a 'playlist_id' is provided, it finds the
             top-K most similar tracks for that existing playlist. 
-            Useful for testing on test (10%) of original data.
         2.  By Track IDs: If a list of 'track_ids' is provided, it
             averages their embeddings to create a temporary "playlist"
             embedding and finds the top-K most similar tracks, excluding
@@ -104,7 +103,7 @@ class LightGNN(nn.Module):
             raise ValueError("Please provide either 'playlist_id' or 'track_ids'.")
 
         with torch.no_grad():
-            # Get the embeddings, which contain the learned representations
+            # Get the embeddings
             all_embeddings = self.embedding.weight
             playlist_embeddings = all_embeddings[:self.num_playlists]
             track_embeddings = all_embeddings[self.num_playlists:]
@@ -115,7 +114,7 @@ class LightGNN(nn.Module):
             # Get the embedding vector for our query playlist
             query_emb = playlist_embeddings[playlist_id].unsqueeze(0) # Shape: [1, D]
             
-            # Calculate scores: [1, D] @ [D, NumTracks] -> [1, NumTracks] using matrix multiply
+            # Calculate scores: [1, D] @ [D, NumTracks] -> [1, NumTracks] 
             scores = torch.matmul(query_emb, track_embeddings.T)
             scores = scores.squeeze() # Shape: [NumTracks]
             
@@ -145,7 +144,7 @@ class LightGNN(nn.Module):
             # Get embeddings for all seed tracks
             seed_track_embs = track_embeddings[local_indices_tensor] 
             
-            #Average them to create a new "playlist" embedding
+            #Average them to create a new embedding
             query_emb = torch.mean(seed_track_embs, dim=0, keepdim=True) # Shape: [1, D]
             
             # Calculate scores against all tracks
@@ -177,7 +176,6 @@ class LightGNN(nn.Module):
         bpr = -torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-8).mean()
 
         # Simple L2 regularization: regularize the entire embedding matrix
-
         reg = (self.embedding.weight.norm(2).pow(2) / 2) * s_reg_lambda / self.num_nodes
 
         return bpr + reg
