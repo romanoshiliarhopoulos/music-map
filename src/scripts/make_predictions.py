@@ -14,7 +14,6 @@ import pandas as pd
 
 
 
-# These match the parameters used during training of the checkpoint
 NUM_PLAYLISTS = 315_220
 NUM_TRACKS = 176_768
 NUM_NODES = NUM_PLAYLISTS + NUM_TRACKS
@@ -73,14 +72,14 @@ def load_json_metadata(filepath: str) -> Optional[Dict[str, str]]:
         with open(filepath, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
             
-        print(f"✅ Successfully loaded details for {len(metadata)} unique tracks.")
+        print(f"Successfully loaded details for {len(metadata)} unique tracks.")
         return metadata
         
     except json.JSONDecodeError as e:
-        print(f"⚠️ Error: Could not parse JSON from {filepath}. Error: {e}", file=sys.stderr)
+        print(f"Error: Could not parse JSON from {filepath}. Error: {e}", file=sys.stderr)
         return None
     except Exception as e:
-        print(f"⚠️ Warning: Could not load/process metadata from {filepath}. Error: {e}", file=sys.stderr)
+        print(f"Warning: Could not load/process metadata from {filepath}. Error: {e}", file=sys.stderr)
         return None
 
 def main():
@@ -180,7 +179,7 @@ def main():
     # Print Results
     print("\nDisplaying: Rank | Global Track ID | Track Info | Score")
     for i in range(args.k):
-        # Move tensors to CPU for .item() and string formatting
+
         track_id = global_track_ids[i].cpu().item()
         score = top_k_scores[i].cpu().item()
         

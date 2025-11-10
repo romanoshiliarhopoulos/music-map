@@ -43,7 +43,7 @@ def analyze_graph(args):
     print(f"  Total Edges (bidirectional): {data.num_edges:,}")
 
     # Calculate Bipartite Sparsity 
-    # We divide by 2 because the graph is bidirectional
+    # divide by 2 because the graph is bidirectional
     actual_interactions = data.num_edges / 2
     max_possible_interactions = num_playlists * num_tracks
     

@@ -15,14 +15,14 @@ def main(args):
     # Define temp directory for batches
     temp_dir = os.path.join(args.output_dir, 'temp_batches')
 
-    # 1. Initialize Preprocessor
+    # Initialize Preprocessor
     preprocessor = Preprocessor(
         position_weight_decay=args.pos_decay,
         min_track_occurrences=args.min_tracks,
         min_playlist_tracks=args.min_playlist_len
     )
     
-    # 2. Get list of all slice files
+    # Get list of all slice files
     all_slice_files = sorted([
         f for f in os.listdir(args.data_path) 
         if f.startswith('mpd.slice.') and f.endswith('.json')
@@ -34,10 +34,10 @@ def main(args):
         
     print(f"Found {len(all_slice_files)} total slice files.")
 
-    # --- Pass 1: Pre-computation ---
+    # Pass 1: Pre-computation 
     preprocessor.precompute_stats(args.data_path, all_slice_files)
     
-    # --- Pass 2: Batch Processing ---
+    # Pass 2: Batch Processing 
     preprocessor.process_and_save_batches(
         data_path=args.data_path,
         slice_files=all_slice_files,
@@ -45,7 +45,7 @@ def main(args):
         temp_output_dir=temp_dir
     )
     
-    # --- Pass 3: Final Consolidation ---
+    # Pass 3: Final Consolidation 
     preprocessor.finalize_processing(
         temp_dir=temp_dir,
         output_dir=args.output_dir
@@ -63,20 +63,18 @@ if __name__ == "__main__":
     parser.add_argument('--output_dir', type=str, default='data/processed',
                         help="Directory to save the processed data. (Default: data/processed)")
     
-    # New argument for batching
+
     parser.add_argument('--batch_size', type=int, default=20,
                         help="Number of slice files to process in each batch. (Default: 20)")
     
-    # Kept existing arguments
+
     parser.add_argument('--min_tracks', type=int, default=10,
                         help="Minimum track occurrences. (Default: 10)")
     parser.add_argument('--min_playlist_len', type=int, default=10,
                         help="Minimum tracks per playlist. (Default: 10)")
     parser.add_argument('--pos_decay', type=float, default=0.001,
                         help="Position weight decay. (Default: 0.001)")
-    
-    # Removed max_playlists, as batching is a better way to test
-    
+        
     args = parser.parse_args()
     
     main(args)

@@ -18,13 +18,13 @@ def main(args):
     """
     print(f"Loading data from: {args.processed_dir}")
     
-    # Define file paths ---
+    # Define file paths 
     train_path = os.path.join(args.processed_dir, 'train.parquet')
     playlist_map_path = os.path.join(args.processed_dir, 'playlist_mapping.pkl')
     track_map_path = os.path.join(args.processed_dir, 'track_mapping.pkl')
     output_graph_path = os.path.join(args.processed_dir, 'train_graph.pt')
     
-    # Load mappings to get node counts ---
+
     try:
         with open(playlist_map_path, 'rb') as f:
             playlist_mapping = pickle.load(f)
@@ -42,7 +42,7 @@ def main(args):
         print("Error: Mappings are empty. Cannot build graph.")
         return
         
-    # --- 3. Load training data ---
+    # Load training data
     print(f"Loading training interactions from {train_path}...")
     try:
         train_df = pd.read_parquet(train_path)

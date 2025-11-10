@@ -20,7 +20,7 @@ def search_parquet(filepath: str, value: any):
     print(f"--- Searching for {search_values} in {filepath} ---")
 
     try:
-        # 1. Open the Parquet file metadata (doesn't load data)
+        # Open the Parquet file metadata (doesn't load data)
         pf = pq.ParquetFile(filepath)
     except FileNotFoundError:
         print(f"\nError: File not found at '{filepath}'")
@@ -42,7 +42,7 @@ def search_parquet(filepath: str, value: any):
 
         for col in df.columns:
             try:
-                # Use .isin() for an efficient, exact match search
+
                 matches_mask = df[col].isin(search_values)
                 
                 if matches_mask.any():
@@ -78,7 +78,7 @@ def print_parquet(filepath: str):
     Reads a Parquet file and prints its structure (shape, schema, and head).
     """
     
-    print(f"--- 🔍 Inspecting: {filepath} ---")
+    print(f"---Inspecting: {filepath} ---")
 
     if not os.path.exists(filepath):
         print(f"Error: File not found at '{filepath}'")

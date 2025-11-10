@@ -35,7 +35,7 @@ DEVICE = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 def main():
     tqdm.write(f"💪 STARTING SAMPLING TRAINER FOR GNN 💪")
     
-    # Keep your original large graph stats
+
     NUM_PLAYLISTS = 315_220
     NUM_TRACKS = 176_768  
     NUM_NODES = NUM_PLAYLISTS + NUM_TRACKS
@@ -54,12 +54,12 @@ def main():
 
     trainer = Trainer()
 
-    # 2. Load Data
+    # Load Data
     tqdm.write(f"Loading data from {DATA_FILE}...")
     data = torch.load(DATA_FILE, map_location='cpu', weights_only=False) 
     data.num_nodes = NUM_NODES
 
-    # 3. Prepare Data for Loader
+    # Prepare Data for Loader
     tqdm.write("Extracting training labels (edge_label_index)...")
     mask = data.edge_index[0] < NUM_PLAYLISTS
     edge_label_index = data.edge_index[:, mask]
@@ -87,7 +87,7 @@ def main():
         neg_count = (first_batch.edge_label == 0).sum().item()  
         tqdm.write(f"Automatic negative sampling working! Pos: {pos_count}, Neg: {neg_count}")
     else:
-        tqdm.write("❌ No automatic negative sampling detected")
+        tqdm.write("No automatic negative sampling detected")
         tqdm.write("Available attributes:", [attr for attr in dir(first_batch) if not attr.startswith('_')])
 
     # Initialize Model  
