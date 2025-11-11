@@ -137,7 +137,7 @@ To evaluate recommender performance 10% of the original data was kept for evalua
 --- Starting Evaluation (K=20) ---
 Evaluating Playlists: 23165it [01:07, 342.78it/s]
 
---- 📊 Evaluation Results ---
+--- Evaluation Results ---
   Playlists Tested: 23165
   Average Precision@20:  9.90%
   Average Hit Rate@20:   65.76%
