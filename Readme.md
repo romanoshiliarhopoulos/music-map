@@ -112,7 +112,6 @@ After running:
 poetry run python -m src.scripts.make_predictions --checkpoint data/train/checkpoints/model_epoch_5000.pt --track_ids 466819
 ```
 
-
 ```
 --- Finding Top 10 Tracks for new playlist with 1 seed tracks ---
   Seed Track: Jamming - Bob Marley & The Wailers (ID: 466819)
