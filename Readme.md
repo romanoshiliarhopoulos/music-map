@@ -146,4 +146,4 @@ Evaluating Playlists: 23165it [01:07, 342.78it/s]
 - Precision @20: Out of our 20 recommendations, what % were correct?
 - Hit Rate @20: What % of the time did we recommend at least ONE correct song?
 
-Overall the predictions seem to be very strong with an impressive hit rate. 
+Overall the predictions seem to be very strong with an impressive hit rate.
